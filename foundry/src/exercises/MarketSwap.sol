@@ -17,9 +17,8 @@ contract MarketSwap {
     IDataStore constant dataStore = IDataStore(DATA_STORE);
     IReader constant reader = IReader(READER);
 
-    // Task 1 - Receive execution fee refund from GMX
+    receive() external payable {}
 
-    // Task 2 - Create an order to swap WETH to DAI
     function createOrder(uint256 wethAmount)
         external
         payable
@@ -28,13 +27,49 @@ contract MarketSwap {
         uint256 executionFee = 0.1 * 1e18;
         weth.transferFrom(msg.sender, address(this), wethAmount);
 
-        // Task 2.1 - Send execution fee to the order vault
+        exchangeRouter.sendWnt{value: executionFee}(ORDER_VAULT, executionFee);
+        
+        IERC20(weth).approve(ROUTER, wethAmount);
 
-        // Task 2.2 - Send WETH to the order vault
+        exchangeRouter.sendTokens({
+            token: WETH,
+            receiver: ORDER_VAULT,
+            amount: wethAmount
+        });
+        address[] memory pathToSwap = new address[](2);
+        pathToSwap[0] = GM_TOKEN_ETH_WETH_USDC;
+        pathToSwap[1] = GM_TOKEN_SWAP_ONLY_USDC_DAI;
 
-        // Task 2.3 - Create an order to swap WETH to DAI
+        exchangeRouter.createOrder(
+            IBaseOrderUtils.CreateOrderParams({
+                addresses: IBaseOrderUtils.CreateOrderParamsAddresses({
+                    receiver: address(this),
+                    cancellationReceiver: address(0),
+                    callbackContract: address(0),
+                    uiFeeReceiver: address(0),
+                    market: address(0),
+                    initialCollateralToken: address(weth),
+                    swapPath: pathToSwap
+                }),
+                numbers: IBaseOrderUtils.CreateOrderParamsNumbers({
+                    sizeDeltaUsd: 0,
+                    initialCollateralDeltaAmount: 0,
+                    triggerPrice: 0,
+                    acceptablePrice: 0,
+                    executionFee: executionFee,
+                    callbackGasLimit: 0,
+                    minOutputAmount: 1,
+                    validFromTime: 0
+                }),
+                orderType: Order.OrderType.MarketSwap,
+                decreasePositionSwapType: Order.DecreasePositionSwapType.NoSwap,
+                isLong: false,
+                shouldUnwrapNativeToken: false,
+                autoCancel: false,
+                referralCode:  bytes32(uint256(0))
+            })
+        );
     }
 
-    // Task 3 - Get order
     function getOrder(bytes32 key) external view returns (Order.Props memory) {}
 }
