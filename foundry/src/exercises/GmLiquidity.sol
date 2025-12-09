@@ -31,6 +31,9 @@ contract GmLiquidity {
     }
 
     // Task 1 - Receive execution fee refund from GMX
+    function getRefund() public {
+        
+    }
 
     // Task 2 - Get market token price
     function getMarketTokenPriceUsd() public view returns (uint256) {
