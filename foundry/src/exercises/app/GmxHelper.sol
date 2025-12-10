@@ -172,14 +172,28 @@ abstract contract GmxHelper {
         bool isIncrease
     ) internal view returns (uint256 sizeDeltaUsd) {
         // Calculate sizeDeltaUsd so that new position's leverage is close to 1
+        uint256 newPositionSize;
+        uint256 newCollateralAmount;
         if (isIncrease) {
             // new position size = long token price * new collateral amount
             // new collateral amount = position.collateralAmount + longTokenAmount
             // sizeDeltaUsd = new position size - position.sizeInUsd
+            newPositionSize = longTokenPrice * newCollateralAmount;
+            newCollateralAmount = collateralAmount + longTokenAmount;
+            sizeDeltaUsd = newPositionSize - sizeInUsd;
         } else {
             // new position size = long token price * new collateral amount
             // new collateral amount = position.collateralAmount - longTokenAmount
             // sizeDeltaUsd = new position size - position.sizeInUsd
+            newPositionSize = longTokenPrice * newCollateralAmount;
+            newCollateralAmount = collateralAmount - longTokenAmount;
+            sizeDeltaUsd = newPositionSize - sizeInUsd;
+        }
+
+        if (sizeDeltaUsd < 0) {
+            return 0;
+        } else {
+            return sizeDeltaUsd;
         }
     }
 
@@ -195,8 +209,53 @@ abstract contract GmxHelper {
         Position.Props memory position = getPosition(positionKey);
 
         // Task 2.1 - Calculate position size delta
+        uint256 sizeDelta = getSizeDeltaUsd(longTokenPrice, position.numbers.sizeInUsd, position.numbers.collateralAmount, longTokenAmount, true);
 
         // Task 2.2 - Create market increase order
+        uint256 acceptablePrice =
+            longTokenPrice * 1e12 / CHAINLINK_MULTIPLIER * 90 / 100;
+
+        exchangeRouter.sendWnt{value: executionFee}({
+            receiver: ORDER_VAULT,
+            amount: executionFee
+        });
+
+        longToken.approve(ROUTER, longTokenAmount);
+        exchangeRouter.sendTokens({
+            token: address(longToken),
+            receiver: ORDER_VAULT,
+            amount: longTokenAmount
+        });
+
+        return exchangeRouter.createOrder(
+            IBaseOrderUtils.CreateOrderParams({
+                addresses: IBaseOrderUtils.CreateOrderParamsAddresses({
+                    receiver: address(this),
+                    cancellationReceiver: address(this),
+                    callbackContract: address(this),
+                    uiFeeReceiver: address(this),
+                    market: position.addresses.market,
+                    initialCollateralToken: position.addresses.collateralToken,
+                    swapPath: new address[](0)
+                }),
+                numbers: IBaseOrderUtils.CreateOrderParamsNumbers({
+                    sizeDeltaUsd: sizeDelta,
+                    initialCollateralDeltaAmount: position.numbers.collateralAmount,
+                    triggerPrice: 0,
+                    acceptablePrice: acceptablePrice,
+                    executionFee: executionFee,
+                    callbackGasLimit: 0,
+                    minOutputAmount: 0,
+                    validFromTime: block.timestamp
+                }),
+                orderType: Order.OrderType.MarketIncrease,
+                decreasePositionSwapType: Order.DecreasePositionSwapType.NoSwap,
+                isLong: true,
+                shouldUnwrapNativeToken: false,
+                autoCancel: false,
+                referralCode: bytes32(uint256(0))
+            })
+        );
     }
 
     // Task 3: Create market decrease order
